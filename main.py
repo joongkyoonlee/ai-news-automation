@@ -3,18 +3,25 @@ AI 뉴스 수집/요약 자동화 파이프라인
 
 흐름:
   1) RSS 피드에서 최신 AI 뉴스 수집
-  2) Claude API로 한국어 요약 생성
-  3) Markdown 보고서로 저장 (output/)
+  2) OpenAI API로 한국어 요약 생성
+  3) Markdown 보고서로 저장 (output/, obsidian/)
+  4) Notion 데이터베이스에 저장 (선택)
 
 환경변수:
-  OPENAI_API_KEY : OpenAI API 키 (필수)
+  OPENAI_API_KEY      : OpenAI API 키 (필수)
+  NOTION_TOKEN        : Notion Integration Token (선택)
+  NOTION_DATABASE_ID  : Notion Database ID (선택)
+  OBSIDIAN_API_KEY    : Obsidian Local REST API 키 (선택)
+  OBSIDIAN_API_URL    : Obsidian Local REST API URL (선택)
 """
 
 import os
 import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import feedparser
+import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -31,6 +38,7 @@ RSS_FEEDS = [
 MAX_ITEMS_PER_FEED = 5          # 피드당 최대 기사 수
 MODEL = "gpt-4o"                 # 요약에 사용할 모델
 OUTPUT_DIR = Path(__file__).parent / "output"
+OBSIDIAN_DIR = Path(__file__).parent / "obsidian" / "AI News"
 
 
 # ── 1) 뉴스 수집 ──────────────────────────────────────
@@ -96,6 +104,150 @@ def save_report(content: str) -> Path:
     return path
 
 
+def save_obsidian_note(content: str) -> Path:
+    """Obsidian에서 바로 읽을 수 있는 Markdown 노트로 저장한다."""
+    OBSIDIAN_DIR.mkdir(parents=True, exist_ok=True)
+    today = datetime.date.today().isoformat()
+    path = OBSIDIAN_DIR / f"{today} AI 뉴스 브리핑.md"
+
+    note = (
+        "---\n"
+        "type: ai-news\n"
+        f"date: {today}\n"
+        "tags:\n"
+        "  - ai-news\n"
+        "  - automation\n"
+        "---\n\n"
+        f"# AI 뉴스 브리핑 ({today})\n\n"
+        f"{content}"
+    )
+    path.write_text(note, encoding="utf-8")
+    print(f"[Obsidian] 노트 저장 완료 → {path}")
+    return path
+
+
+def publish_to_obsidian_api(note_path: Path, content: str) -> None:
+    """Obsidian Local REST API가 설정되어 있으면 노트를 전송한다."""
+    api_key = os.environ.get("OBSIDIAN_API_KEY")
+    api_url = os.environ.get("OBSIDIAN_API_URL")
+
+    if not api_key or not api_url:
+        print("[Obsidian API] OBSIDIAN_API_KEY 또는 OBSIDIAN_API_URL이 없어 건너뜁니다.")
+        return
+
+    relative_path = note_path.relative_to(Path(__file__).parent)
+    vault_path = quote(relative_path.as_posix(), safe="")
+    url = f"{api_url.rstrip('/')}/vault/{vault_path}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "text/markdown",
+    }
+    response = requests.put(url, headers=headers, data=content.encode("utf-8"), timeout=30)
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Obsidian API 저장 실패: {response.status_code} {response.text}"
+        )
+    print("[Obsidian API] 노트 전송 완료")
+
+
+def save_to_notion(content: str) -> None:
+    """Notion 데이터베이스에 일일 브리핑 페이지를 생성한다."""
+    notion_token = os.environ.get("NOTION_TOKEN")
+    database_id = os.environ.get("NOTION_DATABASE_ID")
+
+    if not notion_token or not database_id:
+        print("[Notion] NOTION_TOKEN 또는 NOTION_DATABASE_ID가 없어 건너뜁니다.")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {notion_token}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+    title_property = get_notion_title_property(database_id, headers)
+    today = datetime.date.today().isoformat()
+    title = f"AI 뉴스 브리핑 ({today})"
+    url = "https://api.notion.com/v1/pages"
+    payload = {
+        "parent": {"database_id": database_id},
+        "properties": {
+            title_property: {
+                "title": [
+                    {
+                        "text": {
+                            "content": title,
+                        }
+                    }
+                ]
+            }
+        },
+        "children": markdown_to_notion_blocks(content),
+    }
+
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Notion 저장 실패: {response.status_code} {response.text}"
+        )
+    print("[Notion] 페이지 저장 완료")
+
+
+def get_notion_title_property(database_id: str, headers: dict) -> str:
+    """데이터베이스에서 title 타입 속성 이름을 찾는다."""
+    url = f"https://api.notion.com/v1/databases/{database_id}"
+    response = requests.get(url, headers=headers, timeout=30)
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Notion 데이터베이스 조회 실패: {response.status_code} {response.text}"
+        )
+
+    properties = response.json().get("properties", {})
+    for name, config in properties.items():
+        if config.get("type") == "title":
+            return name
+    raise RuntimeError("Notion 데이터베이스에서 title 속성을 찾지 못했습니다.")
+
+
+def markdown_to_notion_blocks(markdown: str) -> list[dict]:
+    """Markdown 텍스트를 Notion paragraph 블록으로 단순 변환한다."""
+    blocks = []
+    for paragraph in split_text(markdown, max_length=1900):
+        blocks.append(
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": paragraph,
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+    return blocks[:100]
+
+
+def split_text(text: str, max_length: int) -> list[str]:
+    """Notion rich_text 제한에 맞춰 긴 텍스트를 나눈다."""
+    chunks = []
+    current = ""
+    for line in text.splitlines():
+        candidate = f"{current}\n{line}".strip()
+        if len(candidate) <= max_length:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+        current = line
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 # ── 메인 ──────────────────────────────────────────────
 def main() -> None:
     articles = collect_news()
@@ -104,6 +256,12 @@ def main() -> None:
         return
     summary = summarize(articles)
     save_report(summary)
+    obsidian_note_path = save_obsidian_note(summary)
+    publish_to_obsidian_api(
+        obsidian_note_path,
+        obsidian_note_path.read_text(encoding="utf-8"),
+    )
+    save_to_notion(summary)
 
 
 if __name__ == "__main__":
