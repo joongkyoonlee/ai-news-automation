@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 뉴스 자동화 파이프라인</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Malgun Gothic", "맑은 고딕", -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0 1rem;
+    }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 3rem 0; }
+    header { text-align: center; margin-bottom: 3rem; }
+    header h1 { font-size: 2.2rem; margin-bottom: .6rem; }
+    header p { color: var(--muted); font-size: 1.05rem; }
+    .badge {
+      display: inline-block; background: var(--accent); color: #0f172a;
+      font-weight: 700; font-size: .8rem; padding: .25rem .75rem;
+      border-radius: 999px; margin-bottom: 1.2rem;
+    }
+    section { margin-bottom: 2.2rem; }
+    h2 { font-size: 1.35rem; color: var(--accent); margin-bottom: 1rem; }
+    .flow { display: grid; gap: 1rem; }
+    .step {
+      background: var(--card); border-left: 4px solid var(--accent);
+      border-radius: 10px; padding: 1.1rem 1.3rem;
+    }
+    .step strong { color: #fff; }
+    ul { list-style: none; display: grid; gap: .6rem; }
+    li.feed {
+      background: var(--card); border-radius: 10px;
+      padding: .8rem 1.1rem; font-size: .95rem;
+    }
+    table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; }
+    th, td { padding: .8rem 1.1rem; text-align: left; border-bottom: 1px solid #334155; }
+    th { color: var(--accent); }
+    tr:last-child td { border-bottom: none; }
+    code {
+      background: #0b1220; color: #7dd3fc; padding: .15rem .45rem;
+      border-radius: 6px; font-size: .9em;
+    }
+    footer { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 3rem; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="badge">Python · OpenAI API</span>
+      <h1>📰 AI 뉴스 자동화 파이프라인</h1>
+      <p>RSS로 최신 AI 뉴스를 수집하고, AI로 한국어 브리핑을 자동 생성합니다.</p>
+    </header>
+
+    <section>
+      <h2>동작 흐름</h2>
+      <div class="flow">
+        <div class="step"><strong>1. 수집</strong> — TechCrunch·The Verge·VentureBeat 등 RSS 피드에서 최신 기사를 모읍니다.</div>
+        <div class="step"><strong>2. 요약</strong> — OpenAI API(<code>gpt-4o</code>)로 한국어 일일 뉴스 브리핑을 생성합니다.</div>
+        <div class="step"><strong>3. 저장</strong> — 날짜별 Markdown 보고서로 <code>output/</code> 폴더에 기록합니다.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>수집 소스</h2>
+      <ul>
+        <li class="feed">🔹 TechCrunch — Artificial Intelligence</li>
+        <li class="feed">🔹 The Verge</li>
+        <li class="feed">🔹 VentureBeat — AI</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>주요 설정</h2>
+      <table>
+        <tr><th>항목</th><th>값</th></tr>
+        <tr><td>피드당 최대 기사 수</td><td>5개</td></tr>
+        <tr><td>요약 모델</td><td><code>gpt-4o</code></td></tr>
+        <tr><td>출력 형식</td><td>Markdown 보고서</td></tr>
+        <tr><td>필수 환경변수</td><td><code>OPENAI_API_KEY</code></td></tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>실행 방법</h2>
+      <div class="step">
+        <code>pip install -r requirements.txt</code><br />
+        <code>python main.py</code>
+      </div>
+    </section>
+
+    <footer>
+      <p>저장소: <a href="https://github.com/joongkyoonlee/ai-news-automation">joongkyoonlee/ai-news-automation</a></p>
+    </footer>
+  </div>
+</body>
+</html>
